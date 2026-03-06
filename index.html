@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timesheet Insights Report</title>
+    <!-- Google Fonts for Modern Typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- SheetJS for parsing Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- html2pdf for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #4F46E5;
+            --primary-hover: #4338CA;
+            --bg-color: #F9FAFB;
+            --card-bg: #FFFFFF;
+            --text-main: #111827;
+            --text-muted: #6B7280;
+            --border-color: #E5E7EB;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 40px 20px;
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--text-main);
+            margin: 0 0 10px 0;
+            letter-spacing: -0.025em;
+        }
+
+        .header p {
+            font-size: 1.125rem;
+            color: var(--text-muted);
+            margin: 0;
+        }
+
+        .upload-section {
+            background: var(--card-bg);
+            border: 2px dashed var(--border-color);
+            border-radius: 16px;
+            padding: 60px 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            margin-bottom: 40px;
+            position: relative;
+        }
+
+        .upload-section:hover {
+            border-color: var(--primary-color);
+            background: #F3F4F6;
+        }
+
+        .file-input {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        .upload-text {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-bottom: 8px;
+        }
+
+        .upload-hint {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        .results-section {
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            display: none;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .results-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .btn-copy {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-copy:hover {
+            background-color: var(--primary-hover);
+        }
+
+        /* The tables that users will copy-paste */
+        .table-container {
+            overflow-x: auto;
+            border-radius: 8px;
+            /* Removed flex layout as it fundamentally breaks html2canvas positioning logic and creates giant PDF gaps */
+        }
+
+        table {
+            width: calc(100% - 10px);
+            /* Shrunk by 10px to ensure Friday column border renders strictly inside PDF bounds */
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.95rem;
+            border: 1px solid #111827;
+            /* Table-layout defaults to 'auto' to tightly hug width: 1% day columns */
+        }
+
+        th,
+        td {
+            padding: 8px 12px;
+            border: 1px solid #111827;
+            color: #111827;
+            box-sizing: border-box;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            /* Allows long task strings to wrap cleanly */
+        }
+
+        /* Top header row */
+        thead tr:first-child th {
+            background-color: #A3B5C9;
+        }
+
+        thead tr:first-child th:nth-child(1),
+        thead tr:first-child th:nth-child(2) {
+            background-color: #DDE3EA;
+        }
+
+        /* Second header row */
+        thead tr.second-header-row th {
+            background-color: #617D98;
+            color: white;
+            font-weight: 500;
+            font-style: italic;
+        }
+
+        /* Grand Total */
+        .total-row td {
+            background-color: #CCD6E0;
+            font-weight: 700;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <div class="header">
+            <h1>Timesheet Insights</h1>
+            <p>Upload your weekly Excel report to instantly get billable entries nicely formatted.</p>
+        </div>
+
+        <div class="upload-section">
+            <input type="file" id="fileInput" class="file-input" accept=".xlsx, .xls">
+            <div class="upload-icon">📊</div>
+            <div class="upload-text">Click or Drag & Drop Excel File Here</div>
+            <div class="upload-hint">Supports .xlsx and .xls formats</div>
+        </div>
+
+        <div class="results-section" id="resultsSection">
+            <div class="results-header">
+                <h2 class="results-title">Processed Billable Entries</h2>
+                <div style="display: flex; gap: 12px;">
+                    <button class="btn-copy" onclick="copyTable()">
+                        📋 Copy Tables for Email
+                    </button>
+                    <button class="btn-copy" id="btnExportPDF" onclick="exportPDF()" style="background-color: #059669;">
+                        📄 Export as PDF
+                    </button>
+                </div>
+            </div>
+
+            <!-- Email Draft UI -->
+            <div id="emailDraftBox"
+                style="display: none; margin-bottom: 40px; padding: 24px; border: 1px solid var(--border-color); border-radius: 8px; background: #fff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+                <div
+                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 12px;">
+                    <h3 style="margin: 0; color: #111827;">Email Draft Prepared</h3>
+                    <button class="btn-copy" onclick="openAndCopyGmail()"
+                        style="background-color: #4285F4; font-size: 0.95rem; padding: 8px 16px; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">
+                        ✉️ 1-Click Open in Gmail
+                    </button>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <strong style="color: #4B5563; font-size: 0.95rem;">Subject:</strong>
+                        <button class="btn-copy" onclick="copyEmailSubject()"
+                            style="background-color: #059669; font-size: 0.8rem; padding: 6px 12px;">📋 Copy
+                            Subject</button>
+                    </div>
+                    <div id="emailSubjectContent"
+                        style="padding: 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; font-family: Arial, sans-serif; font-size: 14px; color: #111827;">
+                    </div>
+                </div>
+
+                <div>
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <strong style="color: #4B5563; font-size: 0.95rem;">Body:</strong>
+                        <button class="btn-copy" onclick="copyEmailBody()"
+                            style="background-color: #059669; font-size: 0.8rem; padding: 6px 12px;">📋 Copy Body Table
+                            for Gmail</button>
+                    </div>
+                    <div id="emailBodyContent"
+                        style="padding: 16px; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 6px; font-family: Arial, sans-serif; font-size: 14px; color: #000; line-height: 1.5;">
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-container" id="tableContainer">
+                <!-- Table will be injected here via JS -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+
+            reader.onload = function (evt) {
+                try {
+                    const data = evt.target.result;
+
+                    // read with raw:false to keep formatted text
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true, dateNF: 'dd-mm-yyyy' });
+                    const sheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+
+                    // Convert to array of arrays
+                    const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '-' });
+
+                    // Find header row
+                    let headerRowIdx = -1;
+                    let headers = [];
+                    for (let i = 0; i < rawData.length; i++) {
+                        if (rawData[i] && rawData[i].map(c => String(c).trim()).includes("Date")) {
+                            headerRowIdx = i;
+                            headers = rawData[i].map(c => String(c).trim());
+                            break;
+                        }
+                    }
+
+                    if (headerRowIdx === -1) {
+                        alert("Could not find the 'Date' header in the file. Is this the right format?");
+                        return;
+                    }
+
+                    // Parse Data
+                    const parsedData = [];
+                    for (let i = headerRowIdx + 1; i < rawData.length; i++) {
+                        let rowObj = {};
+                        if (rawData[i].every(c => c === '-')) continue; // Skip empty rows
+
+                        for (let j = 0; j < headers.length; j++) {
+                            rowObj[headers[j]] = String(rawData[i][j]).trim();
+                        }
+                        parsedData.push(rowObj);
+                    }
+
+                    // ROLE SUMMARY TABLE MAPPING =================
+                    const roleMapping = {
+                        'Hetvi': 'AI Developer',
+                        'Madhav': 'Frontend Developer',
+                        'Onkar': 'DevOps Engineer',
+                        'Priyanka': 'Quality Engineer',
+                        'Purvesh': 'MEAN Stack Developer',
+                        'Tanmay': 'Scrum Master',
+                        'Sneha': 'Frontend Engineer'
+                    };
+
+                    function getRole(name) {
+                        for (const key in roleMapping) {
+                            if (name.includes(key)) return roleMapping[key];
+                        }
+                        return 'Team Member';
+                    }
+
+                    function getFirstName(name) {
+                        return name.split(' ')[0];
+                    }
+
+                    // Filter for Billable Types AND also include Holiday/Leave ones correctly
+                    const filteredData = parsedData.filter(row => {
+                        const isBillable = row['Billing Type'] === 'Billable';
+                        const taskName = String(row['Task/General/Issue'] || '').toLowerCase();
+                        const isHolidayOrLeave = taskName.includes('holiday') || taskName.includes('leave');
+                        return isBillable || isHolidayOrLeave;
+                    });
+
+                    function timeToHours(s) {
+                        if (!s || s === '-' || s === 'undefined') return 0;
+                        if (String(s).includes(':')) {
+                            let parts = String(s).split(':');
+                            return parseInt(parts[0] || 0) + parseInt(parts[1] || 0) / 60;
+                        }
+                        return parseFloat(s) || 0;
+                    }
+
+                    // Extract unique ordered dates
+                    const dateSet = new Set();
+                    filteredData.forEach(row => {
+                        if (row['Date']) dateSet.add(row['Date']);
+                    });
+                    const uniqueDates = Array.from(dateSet).sort((a, b) => {
+                        const [d1, m1, y1] = a.split('-');
+                        const [d2, m2, y2] = b.split('-');
+                        if (y1 !== y2) return y1 - y2;
+                        if (m1 !== m2) return m1 - m2;
+                        return d1 - d2;
+                    });
+
+                    function formatHeaderDate(dateStr) {
+                        const parts = dateStr.split('-');
+                        if (parts.length === 3) {
+                            const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                            return `${parts[0]}/${months[parseInt(parts[1]) - 1]}`;
+                        }
+                        return dateStr;
+                    }
+
+                    function formatFullTitleDate(dateStr) {
+                        const parts = dateStr.split('-');
+                        if (parts.length === 3) {
+                            const realMonths = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+                            return `${parseInt(parts[0])} ${realMonths[parseInt(parts[1]) - 1]} ${parts[2]}`;
+                        }
+                        return dateStr;
+                    }
+
+                    function formatPdfFileNameDate(dateStr) {
+                        const parts = dateStr.split('-');
+                        if (parts.length === 3) {
+                            const months = ["Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                            return `${parseInt(parts[0])}${months[parseInt(parts[1]) - 1]}${parts[2]}`;
+                        }
+                        return dateStr;
+                    }
+
+                    function getDayName(dateStr) {
+                        const parts = dateStr.split('-');
+                        if (parts.length === 3) {
+                            const d = new Date(parts[2], parts[1] - 1, parts[0]);
+                            return d.toLocaleDateString('en-US', { weekday: 'long' });
+                        }
+                        return '';
+                    }
+
+                    // Group by User -> Task -> Date
+                    const groupedData = {};
+
+                    filteredData.forEach(row => {
+                        const user = row['User'];
+                        const task = row['Task/General/Issue'];
+                        const date = row['Date'];
+                        const hours = timeToHours(row['Client Claim Daily Log']);
+
+                        // Ignore empty users or tasks
+                        if (!user || user === '-' || String(user).trim() === '') return;
+                        if (!task || task === '-' || String(task).trim() === '') return;
+
+                        if (!groupedData[user]) groupedData[user] = {};
+                        if (!groupedData[user][task]) groupedData[user][task] = {};
+                        if (groupedData[user][task][date] === undefined) groupedData[user][task][date] = 0;
+
+                        groupedData[user][task][date] += hours;
+                    });
+
+                    let weekStartStr = uniqueDates.length > 0 ? formatFullTitleDate(uniqueDates[0]) : '';
+                    let weekEndStr = uniqueDates.length > 0 ? formatFullTitleDate(uniqueDates[uniqueDates.length - 1]) : '';
+
+                    let pdfStartStr = uniqueDates.length > 0 ? formatPdfFileNameDate(uniqueDates[0]) : '';
+                    let pdfEndStr = uniqueDates.length > 0 ? formatPdfFileNameDate(uniqueDates[uniqueDates.length - 1]) : '';
+
+                    window.pdfExportFileName = `${pdfStartStr}-${pdfEndStr} Timesheet.pdf`;
+
+                    let allTablesHTML = `
+                        <div style="text-align: center; margin-bottom: 25px; padding-top: 0px;">
+                            <h2 style="margin: 0; font-size: 1.8rem; color: #111827; font-weight: 700;">Multiverz - Challenges.one Weekly Timesheets</h2>
+                            <p style="margin: 4px 0 0; font-size: 1.1rem; color: #4F46E5; font-weight: 600; text-transform: capitalize;">${weekStartStr} to ${weekEndStr}</p>
+                        </div>
+                    `;
+
+                    const users = Object.keys(groupedData).sort();
+
+                    // --- BUILD ROLE SUMMARY TO PLACE AFTER TITLE --- //
+                    let summaryHTML = '<div style="margin-top: 20px; text-align: center; display: flex; flex-direction: column; align-items: center;">';
+                    summaryHTML += '<h2 class="results-title" style="margin-bottom: 12px; font-size: 1.3rem;">Role Summary</h2>';
+                    summaryHTML += '<table style="max-width: 500px; margin-bottom: 20px; margin-left: auto; margin-right: auto;"><thead>';
+                    summaryHTML += '<tr class="second-header-row"><th style="background-color: #A3B5C9; color: #111827; font-weight: 600; font-style: normal; text-align: left;">User</th><th style="background-color: #A3B5C9; color: #111827; font-weight: 600; font-style: normal; text-align: left;">Role</th><th style="background-color: #A3B5C9; color: #111827; text-align: right; font-weight: 600; font-style: normal;">Total Hours</th></tr>';
+                    summaryHTML += '</thead><tbody>';
+
+                    let grandTotalRoles = 0;
+                    let emailSummaryRows = '';
+
+                    users.forEach(user => {
+                        let userWeeklyTotal = 0;
+                        const tasks = Object.keys(groupedData[user]);
+                        tasks.forEach(task => {
+                            Object.values(groupedData[user][task]).forEach(hours => {
+                                userWeeklyTotal += hours;
+                            });
+                        });
+                        grandTotalRoles += userWeeklyTotal;
+
+                        summaryHTML += '<tr>';
+                        summaryHTML += `<td style="text-align: left;">${getFirstName(user)}</td>`;
+                        summaryHTML += `<td style="text-align: left;">${getRole(user)}</td>`;
+                        summaryHTML += `<td style="text-align: right;">${userWeeklyTotal === 0 ? '0' : userWeeklyTotal.toFixed(2)}</td>`;
+                        summaryHTML += '</tr>';
+
+                        // Add to email HTML layout using solid dark borders
+                        emailSummaryRows += `<tr>
+                            <td style="border: 1px solid #6b7280; padding: 6px 12px;">${getFirstName(user)}</td>
+                            <td style="border: 1px solid #6b7280; padding: 6px 12px;">${getRole(user)}</td>
+                            <td style="border: 1px solid #6b7280; padding: 6px 12px; text-align: right;">${userWeeklyTotal === 0 ? '0' : userWeeklyTotal.toFixed(2)}</td>
+                        </tr>`;
+                    });
+
+                    summaryHTML += '<tr class="total-row" style="background-color: #DDE3EA;">';
+                    summaryHTML += `<td colspan="2" style="text-align: right;"><b>Total </b></td>`;
+                    summaryHTML += `<td style="text-align: right;"><b>${grandTotalRoles === 0 ? '0' : grandTotalRoles.toFixed(2)}</b></td>`;
+                    summaryHTML += '</tr>';
+                    summaryHTML += '</tbody></table></div>';
+
+                    // Append the Executive Summary to the Title right away (This is Page 1)
+                    allTablesHTML += summaryHTML;
+
+                    users.forEach((user, idx) => {
+                        let tableHTML = '';
+
+                        // Break EVERY user onto their own new page. 
+                        // Page 1 is purely Executive Summary (Title + Role Summary Matrix).
+                        tableHTML += '<div class="html2pdf__page-break" style="page-break-before: always; clear: both; padding-top: 10px;"></div>';
+
+                        tableHTML += '<table style="margin-bottom: 40px;"><thead>';
+
+                        // First Header Row (User) locked to Tasks column length, (Role) strictly starting from Date #1 (Monday) across the rest
+                        let leftColSpan = 1;
+                        let rightColSpan = uniqueDates.length;
+                        tableHTML += `<tr><th colspan="${leftColSpan}" style="background-color: #DDE3EA; border: 1px solid #111827; text-align: left;">User - ${user}</th>`;
+                        tableHTML += `<th colspan="${rightColSpan}" style="background-color: #DDE3EA; border: 1px solid #111827; text-align: left;">Role - ${getRole(user)}</th></tr>`;
+
+                        // Second Header Row (Days)
+                        // Assigning `width: auto` allows Tasks to stretch, while `width: 1%; white-space: nowrap` forces Date columns to perfectly shrink-fit their inner text.
+                        tableHTML += '<tr class="second-header-row"><th style="width: auto;">Tasks</th>';
+                        uniqueDates.forEach(d => {
+                            tableHTML += `<th style="width: 1%; white-space: nowrap; text-align: center;">${formatHeaderDate(d)} <br>(${getDayName(d)})</th>`;
+                        });
+                        tableHTML += '</tr></thead><tbody>';
+
+                        const tasks = Object.keys(groupedData[user]).sort();
+                        let userTotalPerDate = {};
+                        let hasDataPerDate = {};
+                        uniqueDates.forEach(d => {
+                            userTotalPerDate[d] = 0;
+                            hasDataPerDate[d] = false;
+                        });
+
+                        tasks.forEach((task, index) => {
+                            tableHTML += '<tr>';
+                            tableHTML += `<td>${task}</td>`;
+
+                            uniqueDates.forEach(d => {
+                                if (d in groupedData[user][task]) {
+                                    const hours = groupedData[user][task][d];
+                                    userTotalPerDate[d] += hours;
+                                    hasDataPerDate[d] = true;
+                                    tableHTML += `<td style="text-align: right; width: 1%; white-space: nowrap;">${hours === 0 ? '0' : hours.toFixed(2)}</td>`;
+                                } else {
+                                    tableHTML += `<td style="width: 1%; white-space: nowrap;"></td>`;
+                                }
+                            });
+                            tableHTML += '</tr>';
+                        });
+
+                        // Footer Total Row
+                        tableHTML += '<tr class="total-row">';
+                        tableHTML += `<td><b>Grand Total</b></td>`;
+                        let weekTotal = 0;
+                        uniqueDates.forEach(d => {
+                            const total = userTotalPerDate[d];
+                            weekTotal += total;
+                            if (hasDataPerDate[d]) {
+                                tableHTML += `<td style="text-align: right; width: 1%; white-space: nowrap;"><b>${total === 0 ? '0' : total.toFixed(2)}</b></td>`;
+                            } else {
+                                tableHTML += `<td style="width: 1%; white-space: nowrap;"></td>`;
+                            }
+                        });
+                        tableHTML += '</tr>';
+
+                        // Total per user row
+                        tableHTML += '<tr class="total-row" style="background-color: #DDE3EA;">';
+                        tableHTML += `<td colspan="${uniqueDates.length}" style="text-align: right;"><b>Total Hours</b></td>`;
+                        tableHTML += `<td style="text-align: right;"><b>${weekTotal === 0 ? '0' : weekTotal.toFixed(2)}</b></td>`;
+                        tableHTML += '</tr>';
+
+                        tableHTML += '</tbody></table>';
+
+                        allTablesHTML += tableHTML;
+                    });
+
+                    // The Role Summary has already been built and placed at the top above.
+
+                    // Wrap the complete container softly to ensure PDF scaling natively fits 
+                    // without hitting the exact zero-pixel edge and causing right/top clipping.
+                    allTablesHTML = `<div style="padding: 0px 5px; box-sizing: border-box; width: 100%;">${allTablesHTML}</div>`;
+
+                    document.getElementById('tableContainer').innerHTML = allTablesHTML;
+                    document.getElementById('resultsSection').style.display = 'block';
+
+                    // Build and show the email draft
+                    let mailSubj = `Weekly Timesheet (${weekStartStr} to ${weekEndStr})`;
+                    let mailContentHeader = `Hi Randeep Sir,<br><br>Please find our weekly timesheet submission for the Multiverz | Challenge One Platform project, covering the period of ${weekStartStr} to ${weekEndStr}.<br><br><b>Resource Summary</b>`;
+
+                    let mailTable = `
+                        <table style="width: auto; min-width: 400px; border-collapse: collapse; margin-top: 8px; margin-bottom: 16px; font-family: Arial, sans-serif; border: 1px solid #6b7280;">
+                            <thead>
+                                <tr style="background-color: #f3f4f6;">
+                                    <th style="border: 1px solid #6b7280; padding: 6px 12px; text-align: left; font-weight: bold;">User</th>
+                                    <th style="border: 1px solid #6b7280; padding: 6px 12px; text-align: left; font-weight: bold;">Role</th>
+                                    <th style="border: 1px solid #6b7280; padding: 6px 12px; text-align: right; font-weight: bold;">Total Hours</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${emailSummaryRows}
+                                <tr style="background-color: #f9fafb;">
+                                    <td colspan="2" style="border: 1px solid #6b7280; padding: 6px 12px; text-align: right;"><b>Total </b></td>
+                                    <td style="border: 1px solid #6b7280; padding: 6px 12px; text-align: right;"><b>${grandTotalRoles === 0 ? '0' : grandTotalRoles.toFixed(2)}</b></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    `;
+
+                    let mailFooter = `The detailed timesheet is attached for your review and approval.`;
+
+                    document.getElementById('emailSubjectContent').innerText = mailSubj;
+                    document.getElementById('emailBodyContent').innerHTML = mailContentHeader + mailTable + mailFooter;
+                    document.getElementById('emailDraftBox').style.display = 'block';
+
+                    // Reset file input to allow re-upload of the same file
+                    fileInput.value = '';
+
+                } catch (err) {
+                    console.error(err);
+                    alert("There was an error parsing the file: " + err.message);
+                }
+            };
+
+            reader.readAsArrayBuffer(file);
+        });
+
+        function copyTable() {
+            const tableContainer = document.getElementById('tableContainer');
+            const range = document.createRange();
+            range.selectNode(tableContainer);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+
+            try {
+                // Execute copy
+                document.execCommand('copy');
+
+                // Show visual feedback
+                const btn = document.querySelector('.btn-copy');
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '✅ Copied!';
+                btn.style.backgroundColor = '#059669'; // success green
+
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                    btn.style.backgroundColor = 'var(--primary-color)';
+                }, 2000);
+            } catch (err) {
+                alert('Failed to copy table. Please copy it manually.');
+            }
+            selection.removeAllRanges(); // Deselect
+        }
+
+        function copyEmailSubject() {
+            const subjectText = document.getElementById('emailSubjectContent').innerText;
+            navigator.clipboard.writeText(subjectText).then(() => {
+                alert('Email subject copied to clipboard!');
+            }).catch(() => {
+                alert('Failed to copy. Please manually copy it.');
+            });
+        }
+
+        function copyEmailBody(silent = false) {
+            const emailBodyContent = document.getElementById('emailBodyContent');
+
+            // 1. Synchronous Native Copy (Works universally when user gesture is active)
+            const range = document.createRange();
+            range.selectNodeContents(emailBodyContent); // Selecting contents directly fixes div wrapper clipping bugs
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+
+            try {
+                document.execCommand('copy');
+                if (!silent) {
+                    alert('Email body copied! Now just paste (Ctrl+V) directly into Gmail.');
+                }
+            } catch (err) {
+                if (!silent) alert('Failed to copy email body natively. Please select and copy it manually.');
+            }
+            selection.removeAllRanges(); // Deselect
+
+            // 2. Modern Async Clipboard Override (Guarantees true, rich raw HTML blob mapping in modern engines like Chrome)
+            if (navigator.clipboard && window.ClipboardItem) {
+                const htmlBlob = new Blob([emailBodyContent.innerHTML], { type: 'text/html' });
+                const textBlob = new Blob([emailBodyContent.innerText], { type: 'text/plain' });
+                navigator.clipboard.write([new ClipboardItem({
+                    'text/html': htmlBlob,
+                    'text/plain': textBlob
+                })]).catch(e => console.log('Modern clipboard override skipped', e));
+            }
+        }
+
+        function openAndCopyGmail() {
+            // First SILENTLY invoke the bulletproof dual-layer copy protocol while the UI event is synchronous
+            copyEmailBody(true);
+
+            // Fetch the generated Subject text
+            const subjectText = document.getElementById('emailSubjectContent').innerText;
+
+            // Generate the secure Gmail compose URL explicitly routing the Subject 
+            const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(subjectText)}`;
+
+            // Open Gmail asynchronously tightly mapped to the click event to avoid popup blockers
+            window.open(gmailUrl, '_blank');
+
+            // Set small delay to alert user so the UI has time to cleanly transition to the new tab
+            setTimeout(() => {
+                alert("Gmail is opening!\n\nThe fully formatted Timesheet Table has been successfully copied to your clipboard.\n\nJust click inside the new email's message body and press Ctrl+V (or Right Click -> Paste) to drop it exactly as designed!");
+            }, 500);
+        }
+
+        function exportPDF() {
+            // Scroll to top to eliminate Phantom Margin bugs induced by window scroll offsets
+            const originalScrollY = window.scrollY;
+            window.scrollTo(0, 0);
+
+            const element = document.getElementById('tableContainer');
+
+            const dynamicName = window.pdfExportFileName || 'Timesheets.pdf';
+
+            const opt = {
+                margin: [0.4, 0.4, 0.4, 0.4],
+                filename: dynamicName,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
+                jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' },
+                // Explicitly avoid only table rows! This stops the engine from pushing the 
+                // ENTIRE first table to page 2 if it's too long to fit alongside the main Title.
+                pagebreak: { mode: 'css', avoid: 'tr' }
+            };
+
+            html2pdf().set(opt).from(element).save().then(() => {
+                window.scrollTo(0, originalScrollY);
+            });
+        }
+    </script>
+</body>
+
+</html>
