@@ -342,6 +342,15 @@
                         'Sneha': 'Frontend Engineer'
                     };
 
+                    // Helper to strictly extract purely the base name defined in roleMapping
+                    function getValidUserBaseName(name) {
+                        if (!name) return null;
+                        for (const key in roleMapping) {
+                            if (name.includes(key)) return key;
+                        }
+                        return null; // Excludes users not explicitly defined in roleMapping
+                    }
+
                     function getRole(name) {
                         for (const key in roleMapping) {
                             if (name.includes(key)) return roleMapping[key];
@@ -358,7 +367,10 @@
                         const isBillable = row['Billing Type'] === 'Billable';
                         const taskName = String(row['Task/General/Issue'] || '').toLowerCase();
                         const isHolidayOrLeave = taskName.includes('holiday') || taskName.includes('leave');
-                        return isBillable || isHolidayOrLeave;
+                        
+                        // Strict filter: only include users who are BOTH in the Excel AND stated in the roleMapping
+                        const validUser = getValidUserBaseName(String(row['User'] || ''));
+                        return validUser !== null && (isBillable || isHolidayOrLeave);
                     });
 
                     function timeToHours(s) {
@@ -423,13 +435,15 @@
                     const groupedData = {};
 
                     filteredData.forEach(row => {
-                        const user = row['User'];
+                        const rawUserName = row['User'];
+                        // Standardize the user name strictly to the stated name in our mapping
+                        const user = getValidUserBaseName(rawUserName); 
                         const task = row['Task/General/Issue'];
                         const date = row['Date'];
                         const hours = timeToHours(row['Client Claim Daily Log']);
 
-                        // Ignore empty users or tasks
-                        if (!user || user === '-' || String(user).trim() === '') return;
+                        // Ignore empty users or tasks, or users not implicitly stated
+                        if (!user) return;
                         if (!task || task === '-' || String(task).trim() === '') return;
 
                         if (!groupedData[user]) groupedData[user] = {};
