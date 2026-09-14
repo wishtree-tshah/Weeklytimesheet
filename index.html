@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Timesheet Insights Report</title>
     <!-- Google Fonts for Modern Typography -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- SheetJS for parsing Excel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <!-- html2pdf for PDF export -->
@@ -23,7 +23,7 @@
         }
 
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Montserrat', sans-serif;
             background-color: var(--bg-color);
             margin: 0;
             padding: 40px 20px;
@@ -41,6 +41,12 @@
         .header {
             text-align: center;
             margin-bottom: 40px;
+        }
+
+        .header-logo {
+            height: 40px;
+            width: auto;
+            margin-bottom: 16px;
         }
 
         .header h1 {
@@ -75,6 +81,11 @@
             background: #F3F4F6;
         }
 
+        .upload-section.drag-over {
+            border-color: var(--primary-color);
+            background: #EEF2FF;
+        }
+
         .file-input {
             position: absolute;
             top: 0;
@@ -100,6 +111,38 @@
         .upload-hint {
             color: var(--text-muted);
             font-size: 0.95rem;
+        }
+
+        .upload-filename {
+            margin-top: 14px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            position: relative;
+        }
+
+        .upload-loading {
+            display: none;
+            position: relative;
+        }
+
+        .upload-loading.active {
+            display: block;
+        }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            margin: 0 auto 16px;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .results-section {
@@ -158,7 +201,6 @@
         /* The tables that users will copy-paste */
         .table-container {
             overflow-x: auto;
-            border-radius: 8px;
             /* Removed flex layout as it fundamentally breaks html2canvas positioning logic and creates giant PDF gaps */
         }
 
@@ -201,34 +243,116 @@
             font-style: italic;
         }
 
+        /* Weekend day columns are muted since they normally carry no logged hours */
+        thead tr.second-header-row th.weekend-col {
+            background-color: #8A9DB1;
+            color: #E5EAF0;
+        }
+
         /* Grand Total */
         .total-row td {
             background-color: #CCD6E0;
             font-weight: 700;
+        }
+
+        /* Longer date ranges add more fixed-width day columns, which squeezes the
+           Tasks column and inflates row heights (and PDF page count). This shrinks
+           the per-user tables once the range exceeds a normal work week. */
+        .compact-table th,
+        .compact-table td {
+            padding: 4px 6px;
+            font-size: 0.78rem;
+        }
+
+        /* Non-blocking notifications, replacing native alert() popups for warnings/notices */
+        #toastContainer {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 380px;
+        }
+
+        .toast {
+            background: #fff;
+            border-left: 4px solid var(--primary-color);
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.15);
+            padding: 14px 16px;
+            font-size: 0.9rem;
+            color: var(--text-main);
+            animation: toastIn 0.25s ease-out;
+        }
+
+        .toast-message {
+            white-space: pre-line;
+        }
+
+        .toast.toast-error {
+            border-left-color: #DC2626;
+        }
+
+        .toast.toast-warning {
+            border-left-color: #D97706;
+        }
+
+        .toast-close {
+            float: right;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-weight: 700;
+            margin-left: 12px;
+        }
+
+        @keyframes toastIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
         }
     </style>
 </head>
 
 <body>
 
+    <div id="toastContainer"></div>
+
     <div class="container">
         <div class="header">
+            <img class="header-logo"
+                src="data:image/png;base64,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"
+                alt="Wishtree Technologies">
             <h1>Timesheet Insights</h1>
             <p>Upload your weekly Excel report to instantly get billable entries nicely formatted.</p>
         </div>
 
         <div class="upload-section">
             <input type="file" id="fileInput" class="file-input" accept=".xlsx, .xls">
-            <div class="upload-icon">📊</div>
-            <div class="upload-text">Click or Drag & Drop Excel File Here</div>
-            <div class="upload-hint">Supports .xlsx and .xls formats</div>
+            <div class="upload-loading" id="uploadLoading">
+                <div class="spinner"></div>
+                <div>Processing file…</div>
+            </div>
+            <div id="uploadIdle">
+                <div class="upload-icon">📊</div>
+                <div class="upload-text">Click or Drag & Drop Excel File Here</div>
+                <div class="upload-hint">Supports .xlsx and .xls formats</div>
+            </div>
+            <div class="upload-filename" id="uploadFilename"></div>
         </div>
 
         <div class="results-section" id="resultsSection">
             <div class="results-header">
                 <h2 class="results-title">Processed Billable Entries</h2>
                 <div style="display: flex; gap: 12px;">
-                    <button class="btn-copy" onclick="copyTable()">
+                    <button class="btn-copy" onclick="copyTable(this)">
                         📋 Copy Tables for Email
                     </button>
                     <button class="btn-copy" id="btnExportPDF" onclick="exportPDF()" style="background-color: #059669;">
@@ -253,7 +377,7 @@
                     <div
                         style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                         <strong style="color: #4B5563; font-size: 0.95rem;">Subject:</strong>
-                        <button class="btn-copy" onclick="copyEmailSubject()"
+                        <button class="btn-copy" onclick="copyEmailSubject(this)"
                             style="background-color: #059669; font-size: 0.8rem; padding: 6px 12px;">📋 Copy
                             Subject</button>
                     </div>
@@ -266,7 +390,7 @@
                     <div
                         style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                         <strong style="color: #4B5563; font-size: 0.95rem;">Body:</strong>
-                        <button class="btn-copy" onclick="copyEmailBody()"
+                        <button class="btn-copy" onclick="copyEmailBody(this)"
                             style="background-color: #059669; font-size: 0.8rem; padding: 6px 12px;">📋 Copy Body Table
                             for Gmail</button>
                     </div>
@@ -283,13 +407,80 @@
     </div>
 
     <script>
+        const WISHTREE_LOGO_DATA_URI = document.querySelector('.header-logo').src;
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = 'toast' + (type === 'error' ? ' toast-error' : type === 'warning' ? ' toast-warning' : '');
+
+            const closeBtn = document.createElement('span');
+            closeBtn.className = 'toast-close';
+            closeBtn.textContent = '×';
+            closeBtn.onclick = () => toast.remove();
+
+            const textEl = document.createElement('div');
+            textEl.className = 'toast-message';
+            textEl.textContent = message; // textContent keeps this safe against HTML in file-sourced data
+
+            toast.appendChild(closeBtn);
+            toast.appendChild(textEl);
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                if (toast.parentElement) toast.remove();
+            }, type === 'error' ? 10000 : 8000);
+        }
+
+        function showCopyFeedback(btn) {
+            if (!btn) return;
+            const originalText = btn.innerHTML;
+            const originalBg = btn.style.backgroundColor;
+            btn.innerHTML = '✅ Copied!';
+            btn.style.backgroundColor = '#059669';
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.style.backgroundColor = originalBg;
+            }, 2000);
+        }
+
         const fileInput = document.getElementById('fileInput');
+        const uploadSection = document.querySelector('.upload-section');
+        const uploadLoading = document.getElementById('uploadLoading');
+        const uploadIdle = document.getElementById('uploadIdle');
+        const uploadFilename = document.getElementById('uploadFilename');
+
+        // Visual feedback while dragging a file over the drop zone (the underlying
+        // file input already accepts the drop natively - this only adds the highlight).
+        ['dragenter', 'dragover'].forEach(evt => {
+            uploadSection.addEventListener(evt, (e) => {
+                e.preventDefault();
+                uploadSection.classList.add('drag-over');
+            });
+        });
+        ['dragleave', 'drop'].forEach(evt => {
+            uploadSection.addEventListener(evt, (e) => {
+                e.preventDefault();
+                uploadSection.classList.remove('drag-over');
+            });
+        });
 
         fileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
+            uploadFilename.textContent = `Selected: ${file.name}`;
+            uploadLoading.classList.add('active');
+            uploadIdle.style.display = 'none';
+
             const reader = new FileReader();
+
+            reader.onerror = function () {
+                uploadLoading.classList.remove('active');
+                uploadIdle.style.display = '';
+                fileInput.value = '';
+                showToast('Could not read the selected file. Please try again.', 'error');
+            };
 
             reader.onload = function (evt) {
                 try {
@@ -297,26 +488,61 @@
 
                     // read with raw:false to keep formatted text
                     const workbook = XLSX.read(data, { type: 'array', cellDates: true, dateNF: 'dd-mm-yyyy' });
-                    const sheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[sheetName];
 
-                    // Convert to array of arrays
-                    const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '-' });
-
-                    // Find header row
+                    // Search every sheet for the one containing the "Date" header row,
+                    // rather than assuming the consolidated sheet is always first.
+                    let rawData = null;
+                    let winningSheetName = null;
                     let headerRowIdx = -1;
                     let headers = [];
-                    for (let i = 0; i < rawData.length; i++) {
-                        if (rawData[i] && rawData[i].map(c => String(c).trim()).includes("Date")) {
-                            headerRowIdx = i;
-                            headers = rawData[i].map(c => String(c).trim());
-                            break;
+                    for (const sheetName of workbook.SheetNames) {
+                        const worksheet = workbook.Sheets[sheetName];
+                        const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '-' });
+                        for (let i = 0; i < sheetData.length; i++) {
+                            if (sheetData[i] && sheetData[i].map(c => String(c).trim()).includes("Date")) {
+                                rawData = sheetData;
+                                winningSheetName = sheetName;
+                                headerRowIdx = i;
+                                headers = sheetData[i].map(c => String(c).trim());
+                                break;
+                            }
                         }
+                        if (headerRowIdx !== -1) break;
                     }
 
                     if (headerRowIdx === -1) {
-                        alert("Could not find the 'Date' header in the file. Is this the right format?");
+                        showToast("Could not find the 'Date' header in the file. Is this the right format?", 'error');
                         return;
+                    }
+
+                    // Some rows (typically ones added/edited by hand in Excel) store the Date
+                    // cell as an actual Excel date rather than the plain "DD-MM-YYYY" text the
+                    // rest of the export uses, which the dateNF fallback above can't reach since
+                    // it only applies to cells with no format of their own. Re-parse the sheet
+                    // without cellDates so those cells stay a raw serial number, and convert via
+                    // XLSX.SSF.format rather than a JS Date object - round-tripping through a
+                    // Date and reading its fields back out is timezone-sensitive and can shift
+                    // the calendar day by one for users east of UTC.
+                    const rawWorkbook = XLSX.read(data, { type: 'array' });
+                    const rawWorksheet = rawWorkbook.Sheets[winningSheetName];
+                    const rawDataTyped = XLSX.utils.sheet_to_json(rawWorksheet, { header: 1, raw: true, defval: '-' });
+                    const dateColIdx = headers.indexOf('Date');
+
+                    // Pull the authoritative "TIME PERIOD : dd-mm-yyyy To dd-mm-yyyy" metadata row
+                    // (more reliable than inferring the range from whichever dates have logged entries,
+                    // since a day with no entries yet would otherwise silently shrink the reported range).
+                    let officialPeriodStart = null;
+                    let officialPeriodEnd = null;
+                    for (let i = 0; i < headerRowIdx; i++) {
+                        const metaRow = rawData[i];
+                        if (metaRow && String(metaRow[0] || '').trim().toUpperCase().startsWith('TIME PERIOD')) {
+                            const match = String(metaRow[1] || '').match(/(\d{2}-\d{2}-\d{4})\s*To\s*(\d{2}-\d{2}-\d{4})/i);
+                            if (match) {
+                                officialPeriodStart = match[1];
+                                officialPeriodEnd = match[2];
+                            }
+                            break;
+                        }
                     }
 
                     // Parse Data
@@ -328,50 +554,53 @@
                         for (let j = 0; j < headers.length; j++) {
                             rowObj[headers[j]] = String(rawData[i][j]).trim();
                         }
+
+                        if (dateColIdx !== -1 && rawDataTyped[i]) {
+                            const rawDateVal = rawDataTyped[i][dateColIdx];
+                            if (typeof rawDateVal === 'number') {
+                                rowObj['Date'] = XLSX.SSF.format('dd-mm-yyyy', rawDateVal);
+                            }
+                        }
+
                         parsedData.push(rowObj);
                     }
 
                     // ROLE SUMMARY TABLE MAPPING =================
                     const roleMapping = {
-                        'Hetvi': 'AI Developer',
-                        'Madhav': 'Frontend Developer',
-                        'Onkar': 'DevOps Engineer',
-                        'Priyanka': 'Quality Engineer',
-                        'Purvesh': 'MEAN Stack Developer',
-                        'Tanmay': 'Scrum Master',
-                        'Sneha': 'Frontend Engineer'
+                        'Hetvi Shah': 'AI Developer',
+                        'Madhav Javeri': 'MEAN Stack Developer',
+                        'Onkar Lonare': 'DevOps Engineer',
+                        'Shubham Sonawane': 'Quality Engineer',
+                        'Tanmay Shah': 'Scrum Master',
+                        'Sneha Kasar': 'Frontend Developer'
                     };
 
-                    // Helper to strictly extract purely the base name defined in roleMapping
+                    // Index roleMapping by first name so its keys can be written as either a
+                    // bare first name ("Hetvi") or a full name ("Hetvi Shah") - only the first
+                    // name is ever used to match or display a person, so middle names, initials,
+                    // and last-name spelling differences between this map and the Excel export
+                    // (e.g. "Tanmay Shah" here vs "Tanmay P Shah" in the file) can't break matching.
+                    const roleByFirstName = {};
+                    for (const key in roleMapping) {
+                        const firstName = key.trim().split(/\s+/)[0];
+                        roleByFirstName[firstName.toLowerCase()] = { firstName, role: roleMapping[key] };
+                    }
+
+                    const unmatchedUserNames = new Set();
+
                     function getValidUserBaseName(name) {
                         if (!name) return null;
-                        for (const key in roleMapping) {
-                            if (name.includes(key)) return key;
-                        }
+                        const firstToken = name.trim().split(/\s+/)[0].toLowerCase();
+                        const match = roleByFirstName[firstToken];
+                        if (match) return match.firstName;
+                        unmatchedUserNames.add(name.trim());
                         return null; // Excludes users not explicitly defined in roleMapping
                     }
 
-                    function getRole(name) {
-                        for (const key in roleMapping) {
-                            if (name.includes(key)) return roleMapping[key];
-                        }
-                        return 'Team Member';
+                    function getRole(firstName) {
+                        const match = roleByFirstName[String(firstName || '').toLowerCase()];
+                        return match ? match.role : 'Team Member';
                     }
-
-                    function getFirstName(name) {
-                        return name.split(' ')[0];
-                    }
-
-                    // Filter for Billable Types AND also include Holiday/Leave ones correctly
-                    const filteredData = parsedData.filter(row => {
-                        const isBillable = row['Billing Type'] === 'Billable';
-                        const taskName = String(row['Task/General/Issue'] || '').toLowerCase();
-                        const isHolidayOrLeave = taskName.includes('holiday') || taskName.includes('leave');
-                        
-                        // Strict filter: only include users who are BOTH in the Excel AND stated in the roleMapping
-                        const validUser = getValidUserBaseName(String(row['User'] || ''));
-                        return validUser !== null && (isBillable || isHolidayOrLeave);
-                    });
 
                     function timeToHours(s) {
                         if (!s || s === '-' || s === 'undefined') return 0;
@@ -382,18 +611,42 @@
                         return parseFloat(s) || 0;
                     }
 
-                    // Extract unique ordered dates
-                    const dateSet = new Set();
-                    filteredData.forEach(row => {
-                        if (row['Date']) dateSet.add(row['Date']);
+                    // Filter for Billable Types AND also include Holiday/Leave ones correctly.
+                    // Saturday and Sunday are NOT special-cased - a day (any day) only becomes
+                    // a column at all if someone actually logged an entry against it, decided
+                    // purely from the dates present in the file (see uniqueDates below).
+                    // Also tally hours dropped by each individual rule (Rejected, unrecognized
+                    // user) so a "my total doesn't match Zoho's" question can be answered
+                    // exactly, instead of requiring a guess-and-check round trip.
+                    let rejectedExcludedHours = 0;
+                    let unmatchedUserExcludedHours = 0;
+
+                    const filteredData = parsedData.filter(row => {
+                        const isBillable = row['Billing Type'] === 'Billable';
+                        const taskName = String(row['Task/General/Issue'] || '').toLowerCase();
+                        const isHolidayOrLeave = taskName.includes('holiday') || taskName.includes('leave');
+                        if (!isBillable && !isHolidayOrLeave) return false; // not a billing/leave candidate at all
+
+                        const validUser = getValidUserBaseName(String(row['User'] || ''));
+                        if (validUser === null) {
+                            unmatchedUserExcludedHours += timeToHours(row['Client Claim Daily Log']);
+                            return false;
+                        }
+
+                        if (row['Approval Status'] === 'Rejected') {
+                            rejectedExcludedHours += timeToHours(row['Client Claim Daily Log']);
+                            return false;
+                        }
+
+                        return true;
                     });
-                    const uniqueDates = Array.from(dateSet).sort((a, b) => {
-                        const [d1, m1, y1] = a.split('-');
-                        const [d2, m2, y2] = b.split('-');
-                        if (y1 !== y2) return y1 - y2;
-                        if (m1 !== m2) return m1 - m2;
-                        return d1 - d2;
-                    });
+
+                    if (rejectedExcludedHours > 0 || unmatchedUserExcludedHours > 0) {
+                        let excludedMsg = "Hours excluded from this report's totals:\n";
+                        if (rejectedExcludedHours > 0) excludedMsg += `\n- ${rejectedExcludedHours.toFixed(2)}h from Rejected entries`;
+                        if (unmatchedUserExcludedHours > 0) excludedMsg += `\n- ${unmatchedUserExcludedHours.toFixed(2)}h logged by users not in the recognized team list`;
+                        showToast(excludedMsg, 'info');
+                    }
 
                     function formatHeaderDate(dateStr) {
                         const parts = dateStr.split('-');
@@ -433,18 +686,24 @@
 
                     // Group by User -> Task -> Date
                     const groupedData = {};
+                    const taskDisplayNames = {}; // normalized task key -> original display text
 
                     filteredData.forEach(row => {
                         const rawUserName = row['User'];
                         // Standardize the user name strictly to the stated name in our mapping
-                        const user = getValidUserBaseName(rawUserName); 
-                        const task = row['Task/General/Issue'];
+                        const user = getValidUserBaseName(rawUserName);
+                        const rawTask = row['Task/General/Issue'];
                         const date = row['Date'];
                         const hours = timeToHours(row['Client Claim Daily Log']);
 
                         // Ignore empty users or tasks, or users not implicitly stated
                         if (!user) return;
-                        if (!task || task === '-' || String(task).trim() === '') return;
+                        if (!rawTask || rawTask === '-' || String(rawTask).trim() === '') return;
+
+                        // Normalize the task key so the same task typed with different
+                        // casing/whitespace on different days doesn't split into separate rows.
+                        const task = String(rawTask).trim().toLowerCase();
+                        if (!(task in taskDisplayNames)) taskDisplayNames[task] = String(rawTask).trim();
 
                         if (!groupedData[user]) groupedData[user] = {};
                         if (!groupedData[user][task]) groupedData[user][task] = {};
@@ -453,22 +712,89 @@
                         groupedData[user][task][date] += hours;
                     });
 
-                    let weekStartStr = uniqueDates.length > 0 ? formatFullTitleDate(uniqueDates[0]) : '';
-                    let weekEndStr = uniqueDates.length > 0 ? formatFullTitleDate(uniqueDates[uniqueDates.length - 1]) : '';
+                    if (unmatchedUserNames.size > 0) {
+                        showToast("Note: entries for the following user(s) were skipped because they are not in the recognized team list, and were NOT included in the report:\n\n" + Array.from(unmatchedUserNames).join('\n'), 'warning');
+                    }
 
-                    let pdfStartStr = uniqueDates.length > 0 ? formatPdfFileNameDate(uniqueDates[0]) : '';
-                    let pdfEndStr = uniqueDates.length > 0 ? formatPdfFileNameDate(uniqueDates[uniqueDates.length - 1]) : '';
+                    if (Object.keys(groupedData).length === 0) {
+                        showToast("No billable entries were found for any recognized team member in this file. Please check the file and try again.", 'error');
+                        return;
+                    }
+
+                    // Extract unique ordered dates strictly from entries that actually have a
+                    // valid task recorded against them (i.e. from groupedData, not the wider
+                    // filteredData). A row that passed the billable/user checks above but had a
+                    // blank "Task/General/Issue" would otherwise still contribute its date here,
+                    // producing a phantom all-blank column (e.g. a stray Sunday row with no task).
+                    const dateSet = new Set();
+                    Object.values(groupedData).forEach(userTasks => {
+                        Object.values(userTasks).forEach(taskDates => {
+                            Object.keys(taskDates).forEach(d => dateSet.add(d));
+                        });
+                    });
+                    const uniqueDates = Array.from(dateSet).sort((a, b) => {
+                        const [d1, m1, y1] = a.split('-');
+                        const [d2, m2, y2] = b.split('-');
+                        if (y1 !== y2) return y1 - y2;
+                        if (m1 !== m2) return m1 - m2;
+                        return d1 - d2;
+                    });
+
+                    const malformedDates = uniqueDates.filter(d => !/^\d{2}-\d{2}-\d{4}$/.test(d));
+                    if (malformedDates.length > 0) {
+                        showToast("Warning: some dates in the file are not in the expected DD-MM-YYYY format and may not display correctly:\n\n" + malformedDates.join(', '), 'warning');
+                    }
+
+                    // Longer date ranges add more fixed-width day columns, which squeezes the
+                    // Tasks column and inflates row heights (and PDF page count). Shrink the
+                    // per-user tables once the range exceeds a normal work week.
+                    const wideRangeClass = uniqueDates.length > 6 ? ' compact-table' : '';
+
+                    const rangeStartDate = officialPeriodStart || (uniqueDates.length > 0 ? uniqueDates[0] : '');
+                    const rangeEndDate = officialPeriodEnd || (uniqueDates.length > 0 ? uniqueDates[uniqueDates.length - 1] : '');
+
+                    let weekStartStr = rangeStartDate ? formatFullTitleDate(rangeStartDate) : '';
+                    let weekEndStr = rangeEndDate ? formatFullTitleDate(rangeEndDate) : '';
+
+                    let pdfStartStr = rangeStartDate ? formatPdfFileNameDate(rangeStartDate) : '';
+                    let pdfEndStr = rangeEndDate ? formatPdfFileNameDate(rangeEndDate) : '';
 
                     window.pdfExportFileName = `${pdfStartStr}-${pdfEndStr} Timesheet.pdf`;
+                    window.pdfReportRangeText = `Multiverz Weekly Timesheet | ${weekStartStr} to ${weekEndStr}`;
 
                     let allTablesHTML = `
                         <div style="text-align: center; margin-bottom: 25px; padding-top: 0px;">
+                            <img src="${WISHTREE_LOGO_DATA_URI}" alt="Wishtree Technologies" style="height: 34px; width: auto; margin-bottom: 10px;" />
                             <h2 style="margin: 0; font-size: 1.8rem; color: #111827; font-weight: 700;">Multiverz - Challenges.one Weekly Timesheets</h2>
                             <p style="margin: 4px 0 0; font-size: 1.1rem; color: #4F46E5; font-weight: 600; text-transform: capitalize;">${weekStartStr} to ${weekEndStr}</p>
                         </div>
                     `;
 
                     const users = Object.keys(groupedData).sort();
+
+                    // Weekend columns (Saturday or Sunday) only ever appear because someone
+                    // actually logged a real entry against that date - when one shows up, spell
+                    // out exactly which entry is driving it, so it's obvious whether that's
+                    // genuine weekend work or a data entry mistake worth checking in the source.
+                    const weekendNotes = [];
+                    uniqueDates.forEach(d => {
+                        const dayName = getDayName(d);
+                        if (dayName !== 'Saturday' && dayName !== 'Sunday') return;
+                        const contributors = [];
+                        users.forEach(user => {
+                            Object.keys(groupedData[user]).forEach(task => {
+                                if (d in groupedData[user][task]) {
+                                    contributors.push(`${user} - ${taskDisplayNames[task]} (${groupedData[user][task][d].toFixed(2)}h)`);
+                                }
+                            });
+                        });
+                        if (contributors.length > 0) {
+                            weekendNotes.push(`${formatFullTitleDate(d)} (${dayName}): ${contributors.join('; ')}`);
+                        }
+                    });
+                    if (weekendNotes.length > 0) {
+                        showToast("Weekend entries found in this file - this is why a weekend column appears in the report:\n\n" + weekendNotes.join('\n'), 'info');
+                    }
 
                     // --- BUILD ROLE SUMMARY TO PLACE AFTER TITLE --- //
                     let summaryHTML = '<div style="margin-top: 20px; text-align: center; display: flex; flex-direction: column; align-items: center;">';
@@ -491,105 +817,194 @@
                         grandTotalRoles += userWeeklyTotal;
 
                         summaryHTML += '<tr>';
-                        summaryHTML += `<td style="text-align: left;">${getFirstName(user)}</td>`;
+                        summaryHTML += `<td style="text-align: left;">${user}</td>`;
                         summaryHTML += `<td style="text-align: left;">${getRole(user)}</td>`;
-                        summaryHTML += `<td style="text-align: right;">${userWeeklyTotal === 0 ? '0' : userWeeklyTotal.toFixed(2)}</td>`;
+                        summaryHTML += `<td style="text-align: right;">${userWeeklyTotal.toFixed(2)}</td>`;
                         summaryHTML += '</tr>';
 
                         // Add to email HTML layout using solid dark borders
                         emailSummaryRows += `<tr>
-                            <td style="border: 1px solid #6b7280; padding: 6px 12px;">${getFirstName(user)}</td>
+                            <td style="border: 1px solid #6b7280; padding: 6px 12px;">${user}</td>
                             <td style="border: 1px solid #6b7280; padding: 6px 12px;">${getRole(user)}</td>
-                            <td style="border: 1px solid #6b7280; padding: 6px 12px; text-align: right;">${userWeeklyTotal === 0 ? '0' : userWeeklyTotal.toFixed(2)}</td>
+                            <td style="border: 1px solid #6b7280; padding: 6px 12px; text-align: right;">${userWeeklyTotal.toFixed(2)}</td>
                         </tr>`;
                     });
 
                     summaryHTML += '<tr class="total-row" style="background-color: #DDE3EA;">';
                     summaryHTML += `<td colspan="2" style="text-align: right;"><b>Total </b></td>`;
-                    summaryHTML += `<td style="text-align: right;"><b>${grandTotalRoles === 0 ? '0' : grandTotalRoles.toFixed(2)}</b></td>`;
+                    summaryHTML += `<td style="text-align: right;"><b>${grandTotalRoles.toFixed(2)}</b></td>`;
                     summaryHTML += '</tr>';
                     summaryHTML += '</tbody></table></div>';
 
                     // Append the Executive Summary to the Title right away (This is Page 1)
                     allTablesHTML += summaryHTML;
 
-                    users.forEach((user, idx) => {
-                        let tableHTML = '';
+                    // Each user's task list is split into page-sized chunks (each its own
+                    // <table> with a repeated header, since html2pdf can't repeat a <thead>
+                    // across pages on its own) by measuring actual rendered row heights in the
+                    // DOM rather than assuming a fixed row count - row height varies a lot with
+                    // wrapped task text, and a fixed count needs re-tuning whenever styling
+                    // changes.
+                    //
+                    // PAGE_HEIGHT_BUDGET_PX is the usable content height (CSS px) of one
+                    // html2pdf page for this element and export config (A4 landscape, 0.4in
+                    // margins, scale 2), calibrated against this app's actual ~920px-wide report
+                    // table rather than a synthetic proxy: html2pdf/jsPDF scale the whole
+                    // captured image to fit the page width, so the effective height budget
+                    // scales with the captured element's own width. The 60px reserve covers the
+                    // trailing Grand Total/Total Hours rows appended to the last chunk.
+                    const PAGE_HEIGHT_BUDGET_PX = 980 - 60;
 
-                        // Break EVERY user onto their own new page. 
-                        // Page 1 is purely Executive Summary (Title + Role Summary Matrix).
-                        tableHTML += '<div class="html2pdf__page-break" style="page-break-before: always; clear: both; padding-top: 10px;"></div>';
+                    const userTaskLists = {};
+                    users.forEach(user => {
+                        userTaskLists[user] = Object.keys(groupedData[user]).sort((a, b) => taskDisplayNames[a].localeCompare(taskDisplayNames[b]));
+                    });
 
-                        tableHTML += '<table style="margin-bottom: 40px;"><thead>';
-
-                        // First Header Row (User) locked to Tasks column length, (Role) strictly starting from Date #1 (Monday) across the rest
-                        let leftColSpan = 1;
-                        let rightColSpan = uniqueDates.length;
-                        tableHTML += `<tr><th colspan="${leftColSpan}" style="background-color: #DDE3EA; border: 1px solid #111827; text-align: left;">User - ${user}</th>`;
-                        tableHTML += `<th colspan="${rightColSpan}" style="background-color: #DDE3EA; border: 1px solid #111827; text-align: left;">Role - ${getRole(user)}</th></tr>`;
-
-                        // Second Header Row (Days)
-                        // Assigning `width: auto` allows Tasks to stretch, while `width: 1%; white-space: nowrap` forces Date columns to perfectly shrink-fit their inner text.
-                        tableHTML += '<tr class="second-header-row"><th style="width: auto;">Tasks</th>';
+                    // Pass 1: render one full (unchunked) table per user so real row heights -
+                    // which vary a lot with wrapped task text - can be measured in Pass 2. The
+                    // results section is shown early so this has real layout to measure against;
+                    // it's overwritten with the final chunked HTML before anything is painted,
+                    // so nothing unchunked is ever visible.
+                    let measureHTML = '';
+                    users.forEach(user => {
+                        measureHTML += `<table class="${wideRangeClass.trim()}" data-measure-user="${user}"><thead>`;
+                        measureHTML += `<tr><th colspan="1" style="background-color: #DDE3EA; border: 1px solid #111827; text-align: left;">User - ${user}</th>`;
+                        measureHTML += `<th colspan="${uniqueDates.length}" style="background-color: #DDE3EA; border: 1px solid #111827; text-align: left;">Role - ${getRole(user)}</th></tr>`;
+                        measureHTML += '<tr class="second-header-row"><th style="width: auto;">Tasks</th>';
                         uniqueDates.forEach(d => {
-                            tableHTML += `<th style="width: 1%; white-space: nowrap; text-align: center;">${formatHeaderDate(d)} <br>(${getDayName(d)})</th>`;
+                            const isWeekend = getDayName(d) === 'Saturday' || getDayName(d) === 'Sunday';
+                            measureHTML += `<th class="${isWeekend ? 'weekend-col' : ''}" style="width: 1%; white-space: nowrap; text-align: center;">${formatHeaderDate(d)} <br>(${getDayName(d)})</th>`;
                         });
-                        tableHTML += '</tr></thead><tbody>';
-
-                        const tasks = Object.keys(groupedData[user]).sort();
-                        let userTotalPerDate = {};
-                        let hasDataPerDate = {};
-                        uniqueDates.forEach(d => {
-                            userTotalPerDate[d] = 0;
-                            hasDataPerDate[d] = false;
-                        });
-
-                        tasks.forEach((task, index) => {
-                            tableHTML += '<tr>';
-                            tableHTML += `<td>${task}</td>`;
-
+                        measureHTML += '</tr></thead><tbody>';
+                        userTaskLists[user].forEach(task => {
+                            measureHTML += '<tr>';
+                            measureHTML += `<td>${taskDisplayNames[task]}</td>`;
                             uniqueDates.forEach(d => {
                                 if (d in groupedData[user][task]) {
-                                    const hours = groupedData[user][task][d];
-                                    userTotalPerDate[d] += hours;
-                                    hasDataPerDate[d] = true;
-                                    tableHTML += `<td style="text-align: right; width: 1%; white-space: nowrap;">${hours === 0 ? '0' : hours.toFixed(2)}</td>`;
+                                    measureHTML += `<td style="text-align: right; width: 1%; white-space: nowrap;">${groupedData[user][task][d].toFixed(2)}</td>`;
                                 } else {
-                                    tableHTML += `<td style="width: 1%; white-space: nowrap;"></td>`;
+                                    measureHTML += `<td style="width: 1%; white-space: nowrap;"></td>`;
                                 }
                             });
-                            tableHTML += '</tr>';
+                            measureHTML += '</tr>';
                         });
+                        measureHTML += '</tbody></table>';
+                    });
+                    document.getElementById('tableContainer').innerHTML = `<div style="padding: 0px 5px; box-sizing: border-box; width: 100%;">${measureHTML}</div>`;
+                    document.getElementById('resultsSection').style.display = 'block';
 
-                        // Footer Total Row
-                        tableHTML += '<tr class="total-row">';
-                        tableHTML += `<td><b>Grand Total</b></td>`;
-                        let weekTotal = 0;
-                        uniqueDates.forEach(d => {
-                            const total = userTotalPerDate[d];
-                            weekTotal += total;
-                            if (hasDataPerDate[d]) {
-                                tableHTML += `<td style="text-align: right; width: 1%; white-space: nowrap;"><b>${total === 0 ? '0' : total.toFixed(2)}</b></td>`;
-                            } else {
-                                tableHTML += `<td style="width: 1%; white-space: nowrap;"></td>`;
+                    // Pass 2: measure, and greedily pack rows into page-height-budgeted chunks.
+                    const userChunkPlans = {};
+                    document.querySelectorAll('#tableContainer table[data-measure-user]').forEach(tableEl => {
+                        const user = tableEl.getAttribute('data-measure-user');
+                        const tasks = userTaskLists[user];
+                        const headerHeight = Array.from(tableEl.querySelectorAll('thead tr'))
+                            .reduce((sum, tr) => sum + tr.getBoundingClientRect().height, 0);
+                        const rowEls = tableEl.querySelectorAll('tbody tr');
+                        const chunks = [];
+                        let currentChunk = [];
+                        let currentHeight = headerHeight;
+                        rowEls.forEach((rowEl, idx) => {
+                            const rowHeight = rowEl.getBoundingClientRect().height;
+                            if (currentChunk.length > 0 && currentHeight + rowHeight > PAGE_HEIGHT_BUDGET_PX) {
+                                chunks.push(currentChunk);
+                                currentChunk = [];
+                                currentHeight = headerHeight;
                             }
+                            currentChunk.push(tasks[idx]);
+                            currentHeight += rowHeight;
                         });
-                        tableHTML += '</tr>';
+                        if (currentChunk.length > 0) chunks.push(currentChunk);
+                        if (chunks.length === 0) chunks.push([]);
+                        userChunkPlans[user] = chunks;
+                    });
 
-                        // Total per user row
-                        tableHTML += '<tr class="total-row" style="background-color: #DDE3EA;">';
-                        tableHTML += `<td colspan="${uniqueDates.length}" style="text-align: right;"><b>Total Hours</b></td>`;
-                        tableHTML += `<td style="text-align: right;"><b>${weekTotal === 0 ? '0' : weekTotal.toFixed(2)}</b></td>`;
-                        tableHTML += '</tr>';
+                    // Pass 3: build the final chunked HTML using the measured chunk boundaries.
+                    users.forEach((user) => {
+                        const tasks = userTaskLists[user];
 
-                        tableHTML += '</tbody></table>';
+                        // Compute per-date totals across ALL of this user's tasks up front, so
+                        // the Grand Total row is correct no matter which page chunk it lands on.
+                        let userTotalPerDate = {};
+                        let hasDataPerDate = {};
+                        uniqueDates.forEach(d => { userTotalPerDate[d] = 0; hasDataPerDate[d] = false; });
+                        tasks.forEach(task => {
+                            uniqueDates.forEach(d => {
+                                if (d in groupedData[user][task]) {
+                                    userTotalPerDate[d] += groupedData[user][task][d];
+                                    hasDataPerDate[d] = true;
+                                }
+                            });
+                        });
+                        let weekTotal = 0;
+                        uniqueDates.forEach(d => { weekTotal += userTotalPerDate[d]; });
 
-                        allTablesHTML += tableHTML;
+                        const chunks = userChunkPlans[user];
+
+                        chunks.forEach((chunkTasks, chunkIdx) => {
+                            const isLastChunk = chunkIdx === chunks.length - 1;
+                            let tableHTML = '';
+
+                            // Break EVERY chunk onto its own new page.
+                            tableHTML += '<div class="html2pdf__page-break" style="page-break-before: always; clear: both; padding-top: 10px;"></div>';
+
+                            tableHTML += `<table class="${wideRangeClass.trim()}" style="margin-bottom: 40px;"><thead>`;
+
+                            const userLabel = chunkIdx === 0 ? user : `${user} (continued)`;
+                            tableHTML += `<tr><th colspan="1" style="background-color: #DDE3EA; border: 1px solid #111827; text-align: left;">User - ${userLabel}</th>`;
+                            tableHTML += `<th colspan="${uniqueDates.length}" style="background-color: #DDE3EA; border: 1px solid #111827; text-align: left;">Role - ${getRole(user)}</th></tr>`;
+
+                            tableHTML += '<tr class="second-header-row"><th style="width: auto;">Tasks</th>';
+                            uniqueDates.forEach(d => {
+                                const isWeekend = getDayName(d) === 'Saturday' || getDayName(d) === 'Sunday';
+                                tableHTML += `<th class="${isWeekend ? 'weekend-col' : ''}" style="width: 1%; white-space: nowrap; text-align: center;">${formatHeaderDate(d)} <br>(${getDayName(d)})</th>`;
+                            });
+                            tableHTML += '</tr></thead><tbody>';
+
+                            chunkTasks.forEach(task => {
+                                tableHTML += '<tr>';
+                                tableHTML += `<td>${taskDisplayNames[task]}</td>`;
+
+                                uniqueDates.forEach(d => {
+                                    if (d in groupedData[user][task]) {
+                                        const hours = groupedData[user][task][d];
+                                        tableHTML += `<td style="text-align: right; width: 1%; white-space: nowrap;">${hours.toFixed(2)}</td>`;
+                                    } else {
+                                        tableHTML += `<td style="width: 1%; white-space: nowrap;"></td>`;
+                                    }
+                                });
+                                tableHTML += '</tr>';
+                            });
+
+                            if (isLastChunk) {
+                                // Footer Total Row
+                                tableHTML += '<tr class="total-row">';
+                                tableHTML += `<td><b>Grand Total</b></td>`;
+                                uniqueDates.forEach(d => {
+                                    if (hasDataPerDate[d]) {
+                                        tableHTML += `<td style="text-align: right; width: 1%; white-space: nowrap;"><b>${userTotalPerDate[d].toFixed(2)}</b></td>`;
+                                    } else {
+                                        tableHTML += `<td style="width: 1%; white-space: nowrap;"></td>`;
+                                    }
+                                });
+                                tableHTML += '</tr>';
+
+                                // Total per user row
+                                tableHTML += '<tr class="total-row" style="background-color: #DDE3EA;">';
+                                tableHTML += `<td colspan="${uniqueDates.length}" style="text-align: right;"><b>Total Hours</b></td>`;
+                                tableHTML += `<td style="text-align: right;"><b>${weekTotal.toFixed(2)}</b></td>`;
+                                tableHTML += '</tr>';
+                            }
+
+                            tableHTML += '</tbody></table>';
+
+                            allTablesHTML += tableHTML;
+                        });
                     });
 
                     // The Role Summary has already been built and placed at the top above.
 
-                    // Wrap the complete container softly to ensure PDF scaling natively fits 
+                    // Wrap the complete container softly to ensure PDF scaling natively fits
                     // without hitting the exact zero-pixel edge and causing right/top clipping.
                     allTablesHTML = `<div style="padding: 0px 5px; box-sizing: border-box; width: 100%;">${allTablesHTML}</div>`;
 
@@ -613,7 +1028,7 @@
                                 ${emailSummaryRows}
                                 <tr style="background-color: #f9fafb;">
                                     <td colspan="2" style="border: 1px solid #6b7280; padding: 6px 12px; text-align: right;"><b>Total </b></td>
-                                    <td style="border: 1px solid #6b7280; padding: 6px 12px; text-align: right;"><b>${grandTotalRoles === 0 ? '0' : grandTotalRoles.toFixed(2)}</b></td>
+                                    <td style="border: 1px solid #6b7280; padding: 6px 12px; text-align: right;"><b>${grandTotalRoles.toFixed(2)}</b></td>
                                 </tr>
                             </tbody>
                         </table>
@@ -625,19 +1040,21 @@
                     document.getElementById('emailBodyContent').innerHTML = mailContentHeader + mailTable + mailFooter;
                     document.getElementById('emailDraftBox').style.display = 'block';
 
-                    // Reset file input to allow re-upload of the same file
-                    fileInput.value = '';
-
                 } catch (err) {
                     console.error(err);
-                    alert("There was an error parsing the file: " + err.message);
+                    showToast("There was an error parsing the file: " + err.message, 'error');
+                } finally {
+                    uploadLoading.classList.remove('active');
+                    uploadIdle.style.display = '';
+                    // Reset file input to allow re-upload of the same file, even after an error
+                    fileInput.value = '';
                 }
             };
 
             reader.readAsArrayBuffer(file);
         });
 
-        function copyTable() {
+        function copyTable(btn) {
             const tableContainer = document.getElementById('tableContainer');
             const range = document.createRange();
             range.selectNode(tableContainer);
@@ -648,33 +1065,23 @@
             try {
                 // Execute copy
                 document.execCommand('copy');
-
-                // Show visual feedback
-                const btn = document.querySelector('.btn-copy');
-                const originalText = btn.innerHTML;
-                btn.innerHTML = '✅ Copied!';
-                btn.style.backgroundColor = '#059669'; // success green
-
-                setTimeout(() => {
-                    btn.innerHTML = originalText;
-                    btn.style.backgroundColor = 'var(--primary-color)';
-                }, 2000);
+                showCopyFeedback(btn);
             } catch (err) {
-                alert('Failed to copy table. Please copy it manually.');
+                showToast('Failed to copy table. Please copy it manually.', 'error');
             }
             selection.removeAllRanges(); // Deselect
         }
 
-        function copyEmailSubject() {
+        function copyEmailSubject(btn) {
             const subjectText = document.getElementById('emailSubjectContent').innerText;
             navigator.clipboard.writeText(subjectText).then(() => {
-                alert('Email subject copied to clipboard!');
+                showCopyFeedback(btn);
             }).catch(() => {
-                alert('Failed to copy. Please manually copy it.');
+                showToast('Failed to copy subject. Please copy it manually.', 'error');
             });
         }
 
-        function copyEmailBody(silent = false) {
+        function copyEmailBody(btn, silent = false) {
             const emailBodyContent = document.getElementById('emailBodyContent');
 
             // 1. Synchronous Native Copy (Works universally when user gesture is active)
@@ -686,11 +1093,9 @@
 
             try {
                 document.execCommand('copy');
-                if (!silent) {
-                    alert('Email body copied! Now just paste (Ctrl+V) directly into Gmail.');
-                }
+                if (!silent) showCopyFeedback(btn);
             } catch (err) {
-                if (!silent) alert('Failed to copy email body natively. Please select and copy it manually.');
+                if (!silent) showToast('Failed to copy email body natively. Please select and copy it manually.', 'error');
             }
             selection.removeAllRanges(); // Deselect
 
@@ -707,20 +1112,20 @@
 
         function openAndCopyGmail() {
             // First SILENTLY invoke the bulletproof dual-layer copy protocol while the UI event is synchronous
-            copyEmailBody(true);
+            copyEmailBody(null, true);
 
             // Fetch the generated Subject text
             const subjectText = document.getElementById('emailSubjectContent').innerText;
 
-            // Generate the secure Gmail compose URL explicitly routing the Subject 
+            // Generate the secure Gmail compose URL explicitly routing the Subject
             const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(subjectText)}`;
 
             // Open Gmail asynchronously tightly mapped to the click event to avoid popup blockers
             window.open(gmailUrl, '_blank');
 
-            // Set small delay to alert user so the UI has time to cleanly transition to the new tab
+            // Give the UI a moment to transition to the new tab before notifying
             setTimeout(() => {
-                alert("Gmail is opening!\n\nThe fully formatted Timesheet Table has been successfully copied to your clipboard.\n\nJust click inside the new email's message body and press Ctrl+V (or Right Click -> Paste) to drop it exactly as designed!");
+                showToast("Gmail is opening! The fully formatted timesheet table is on your clipboard - click into the email body and press Ctrl+V to paste it.", 'info');
             }, 500);
         }
 
@@ -732,6 +1137,7 @@
             const element = document.getElementById('tableContainer');
 
             const dynamicName = window.pdfExportFileName || 'Timesheets.pdf';
+            const footerRangeText = window.pdfReportRangeText || '';
 
             const opt = {
                 margin: [0.4, 0.4, 0.4, 0.4],
@@ -739,12 +1145,26 @@
                 image: { type: 'jpeg', quality: 0.98 },
                 html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
                 jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' },
-                // Explicitly avoid only table rows! This stops the engine from pushing the 
+                // Explicitly avoid only table rows! This stops the engine from pushing the
                 // ENTIRE first table to page 2 if it's too long to fit alongside the main Title.
                 pagebreak: { mode: 'css', avoid: 'tr' }
             };
 
-            html2pdf().set(opt).from(element).save().then(() => {
+            html2pdf().set(opt).from(element).toPdf().get('pdf').then((pdf) => {
+                // Stamp a footer (report identification + page number) on every page, since a
+                // long multi-page export otherwise has no way to tell which page belongs to
+                // which report if pages are separated or printed loose.
+                const pageCount = pdf.internal.getNumberOfPages();
+                const pageWidth = pdf.internal.pageSize.getWidth();
+                const pageHeight = pdf.internal.pageSize.getHeight();
+                for (let i = 1; i <= pageCount; i++) {
+                    pdf.setPage(i);
+                    pdf.setFontSize(8);
+                    pdf.setTextColor(120, 120, 120);
+                    pdf.text(footerRangeText, 0.4, pageHeight - 0.2);
+                    pdf.text(`Page ${i} of ${pageCount}`, pageWidth - 0.4, pageHeight - 0.2, { align: 'right' });
+                }
+            }).save().then(() => {
                 window.scrollTo(0, originalScrollY);
             });
         }
